@@ -3,6 +3,7 @@
   "description": "Real-time AI First Responder Assistant analyzing video footage for structural hazards and signs of life.",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }
