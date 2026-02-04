@@ -89,7 +89,7 @@ const LiveAnalysis: React.FC = () => {
             model: 'gemini-2.5-flash-native-audio-preview-12-2025',
             config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: "You are ResQ-Eye, a tactical AI assistant. Keep responses concise, professional, and military-styled. You are seeing a live video feed.",
+                systemInstruction: "You are EYE-RESQ, a tactical AI assistant. Keep responses concise, professional, and military-styled. You are seeing a live video feed.",
             },
             callbacks: {
                 onopen: () => {

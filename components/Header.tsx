@@ -20,7 +20,7 @@ const Header: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-black text-white tracking-tighter uppercase flex flex-col leading-none">
-              <span>ResQ<span className="text-orange-500">-Eye</span></span>
+              <span>EYE<span className="text-orange-500">-RESQ</span></span>
               <span className="text-[9px] font-mono text-slate-500 tracking-[0.2em] mt-0.5">TACTICAL AI UNIT</span>
             </h1>
           </div>

@@ -53,7 +53,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, apiKey, setApiKey })
             <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
               <h3 className="text-sm font-semibold text-white mb-2">Need an API Key?</h3>
               <p className="text-xs text-slate-400 mb-3">
-                Get a free API key from Google AI Studio to power ResQ-Eye.
+                Get a free API key from Google AI Studio to power EYE-RESQ.
               </p>
               <a 
                 href="https://aistudio.google.com/app/apikey" 
@@ -68,7 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, apiKey, setApiKey })
           
           <div className="mt-auto border-t border-slate-800 pt-6">
              <p className="text-xs text-center text-slate-600">
-               ResQ-Eye v1.0.0
+               EYE-RESQ v1.0.0
              </p>
           </div>
         </div>
