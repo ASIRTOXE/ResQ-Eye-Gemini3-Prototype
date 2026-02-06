@@ -81,8 +81,17 @@ const LiveAnalysis: React.FC = () => {
         audioContextRef.current = outputCtx;
         nextStartTime.current = 0;
 
-        // Get Audio Stream
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Get Audio Stream with explicit try/catch for permissions
+        let audioStream: MediaStream;
+        try {
+             audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (mediaErr: any) {
+             console.error("Microphone access failed:", mediaErr);
+             if (mediaErr.name === 'NotAllowedError' || mediaErr.name === 'PermissionDeniedError') {
+                 throw new Error("Microphone permission denied. Please allow access.");
+             }
+             throw mediaErr;
+        }
         
         // Connect Live Session
         const sessionPromise = ai.live.connect({
@@ -104,7 +113,7 @@ const LiveAnalysis: React.FC = () => {
                         const inputData = e.inputBuffer.getChannelData(0);
                         const pcmData = createPcmBlob(inputData);
                         
-                        // Send Audio
+                        // Send Audio - using sessionPromise since session obj is not passed to onopen
                         sessionPromise.then(session => {
                             session.sendRealtimeInput({ media: pcmData });
                         });
@@ -152,6 +161,7 @@ const LiveAnalysis: React.FC = () => {
                 },
                 onerror: (e) => {
                     console.error("Live API Error:", e);
+                    // Often API errors come here
                     setCurrentStatus("UPLINK ERROR // REVERTING");
                     disconnectLiveAPI();
                 }
@@ -160,9 +170,19 @@ const LiveAnalysis: React.FC = () => {
         
         liveSessionRef.current = sessionPromise;
 
+        // Catch immediate connection errors (like 403 Forbidden)
+        await sessionPromise.catch(e => {
+            throw e;
+        });
+
     } catch (e: any) {
         console.error("Failed to connect Live API", e);
-        setError("VOICE COMM FAILED: " + e.message);
+        // Handle specific error messages
+        let msg = e.message || String(e);
+        if (msg.includes("Permission denied") || msg.includes("403")) {
+            msg = "Access Denied. Check API Key permissions or Microphone access.";
+        }
+        setError("VOICE COMM FAILED: " + msg);
         setIsVoiceMode(false);
         startAnalysis();
     }
@@ -191,31 +211,38 @@ const LiveAnalysis: React.FC = () => {
                      data: data
                  }
              });
+         }).catch(() => {
+             // Ignore send errors if session closed
          });
 
       }, 500); // 500ms = 2fps
       
-      // Store interval ID in a way we can clear it? 
-      // Reuse analysisInterval ref since we cleared it for polling
       analysisInterval.current = interval;
   };
 
   const disconnectLiveAPI = () => {
       // Stop Audio Contexts
-      if (audioContextRef.current) audioContextRef.current.close();
-      if (audioInputContextRef.current) audioInputContextRef.current.close();
+      if (audioContextRef.current) {
+          audioContextRef.current.close().catch(() => {});
+          audioContextRef.current = null;
+      }
+      if (audioInputContextRef.current) {
+          audioInputContextRef.current.close().catch(() => {});
+          audioInputContextRef.current = null;
+      }
       
       // Stop Sources
-      sourcesRef.current.forEach(s => s.stop());
+      sourcesRef.current.forEach(s => {
+          try { s.stop(); } catch(e) {}
+      });
       sourcesRef.current.clear();
       
-      // Close Session if possible (not directly exposed in basic promise, relying on ref logic if we had the object)
-      // The API doesn't have a clean 'close' on the promise wrapper easily without storing the result.
+      // Close Session if possible
       if (liveSessionRef.current) {
           liveSessionRef.current.then((session: any) => {
-               // Assuming session has close, if not we just kill connection logic
                if(session.close) session.close();
-          });
+          }).catch(() => {});
+          liveSessionRef.current = null;
       }
       
       setIsConnected(false);
@@ -322,7 +349,6 @@ const LiveAnalysis: React.FC = () => {
         };
       }
       
-      // If we were in voice mode, we need to restart the stream maybe?
       // For now, default to REST analysis when camera restarts
       startAnalysis();
 
@@ -351,7 +377,7 @@ const LiveAnalysis: React.FC = () => {
         analysisInterval.current = null;
       }
       if (analysisTimeoutRef.current) {
-          clearTimeout(analysisTimeoutRef.current);
+          window.clearTimeout(analysisTimeoutRef.current);
           analysisTimeoutRef.current = null;
       }
   }
@@ -466,10 +492,10 @@ const LiveAnalysis: React.FC = () => {
         await captureAndAnalyze();
         
         // Schedule next run
-        analysisTimeoutRef.current = setTimeout(runAnalysisLoop, analysisDelayRef.current);
+        analysisTimeoutRef.current = window.setTimeout(runAnalysisLoop, analysisDelayRef.current);
     };
     
-    analysisTimeoutRef.current = setTimeout(runAnalysisLoop, 1000);
+    analysisTimeoutRef.current = window.setTimeout(runAnalysisLoop, 1000);
   };
 
   const captureAndAnalyze = async () => {

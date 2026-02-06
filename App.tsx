@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import VideoUpload from './components/VideoUpload';
 import AnalysisResult from './components/AnalysisResult';
 import LiveAnalysis from './components/LiveAnalysis';
 import { VideoFile, AnalysisStatus } from './types';
-import { analyzeVideo } from './services/geminiService';
-import { Play, Upload, Radio, Cpu, Database, Network } from 'lucide-react';
+import { analyzeVideo, transcribeAudio, getTacticalMapInfo } from './services/geminiService';
+import { Play, Upload, Radio, Cpu, Database, Network, Mic, MapPin, Volume2, VolumeX } from 'lucide-react';
 
 const App: React.FC = () => {
   const [videoFile, setVideoFile] = useState<VideoFile | null>(null);
@@ -13,8 +13,72 @@ const App: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
+  // Audio Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  
+  // Tactical Audio State
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  
   // Mode state
   const [mode, setMode] = useState<'upload' | 'live'>('upload');
+
+  // Pre-load voices
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+    }
+  }, []);
+
+  const speakTacticalAlert = (text: string) => {
+    if (!isAudioEnabled || !window.speechSynthesis) return;
+    
+    // Cancel any ongoing speech to prioritize new alert
+    window.speechSynthesis.cancel();
+    
+    let message = "";
+    const upperText = text.toUpperCase();
+
+    // PRIORITY 1: BIOLOGICAL SIGNATURES (Survivors)
+    if (
+        upperText.includes("BIO-SIGNATURE") || 
+        (upperText.includes("VISUAL CONFIRMATION") && upperText.includes("YES")) ||
+        upperText.includes("SURVIVOR DETECTED")
+    ) {
+        message = "ALERT: BIOLOGICAL SIGNATURE DETECTED. INITIALIZE RECOVERY PROTOCOL.";
+    } 
+    // PRIORITY 2: CRITICAL THREATS
+    else if (upperText.includes("CRITICAL ALERT") && !upperText.includes("NONE")) {
+        // Extract the specific alert if possible
+        const lines = text.split('\n');
+        const alertLine = lines.find(line => line.toUpperCase().includes("CRITICAL ALERT"));
+        if (alertLine) {
+            // Clean up markdown chars like ** or -
+            const cleanAlert = alertLine.replace(/[*#\-]/g, '').split(':')[1] || "STRUCTURAL THREAT";
+            message = `WARNING. ${cleanAlert.trim()}.`;
+        } else {
+            message = "WARNING. CRITICAL STRUCTURAL ANOMALY DETECTED.";
+        }
+    }
+    // PRIORITY 3: GENERAL DANGER KEYWORDS
+    else if (upperText.includes("COLLAPSE") || upperText.includes("UNSTABLE")) {
+        message = "DANGER. STRUCTURAL INSTABILITY DETECTED. EXERCISE EXTREME CAUTION.";
+    }
+
+    if (message) {
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.pitch = 0.8; // Low pitch for "Military/AI" feel
+        utterance.rate = 0.9;  // Slightly slower, more authoritative
+
+        // Try to find a suitable English voice
+        const voices = window.speechSynthesis.getVoices();
+        const tacticalVoice = voices.find(v => v.lang === 'en-US' && v.name.includes("Google")) || 
+                              voices.find(v => v.lang === 'en-US');
+        
+        if (tacticalVoice) utterance.voice = tacticalVoice;
+        
+        window.speechSynthesis.speak(utterance);
+    }
+  };
 
   const handleVideoSelected = (file: VideoFile | null) => {
     setVideoFile(file);
@@ -35,11 +99,86 @@ const App: React.FC = () => {
       const analysisResult = await analyzeVideo(videoFile.file);
       setResult(analysisResult);
       setStatus(AnalysisStatus.COMPLETED);
+      
+      // Trigger Tactical Voice Alert
+      speakTacticalAlert(analysisResult);
+      
     } catch (err: any) {
       console.error(err);
       setError(err.message || "An unexpected error occurred during analysis.");
       setStatus(AnalysisStatus.ERROR);
     }
+  };
+
+  const handleVoiceReport = async () => {
+      if (isRecording) return; // Stop handled by media recorder usually, but we'll do simple duration for now or toggle
+      
+      setIsRecording(true);
+      setError(null);
+      
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          const chunks: BlobPart[] = [];
+          
+          mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+          
+          mediaRecorder.onstop = async () => {
+              const blob = new Blob(chunks, { type: 'audio/webm' });
+              setStatus(AnalysisStatus.ANALYZING);
+              
+              try {
+                  const text = await transcribeAudio(blob);
+                  setResult("### 🎙️ VOICE LOG TRANSCRIPTION\n\n" + text);
+                  setStatus(AnalysisStatus.COMPLETED);
+                  // Switch to upload mode to show result
+                  setMode('upload');
+              } catch (err: any) {
+                  setError("Transcription failed: " + err.message);
+                  setStatus(AnalysisStatus.ERROR);
+              }
+              setIsRecording(false);
+              stream.getTracks().forEach(t => t.stop());
+          };
+          
+          mediaRecorder.start();
+          // Record for 5 seconds for this demo action
+          setTimeout(() => mediaRecorder.stop(), 5000);
+          
+      } catch (e: any) {
+          setError("Microphone access denied.");
+          setIsRecording(false);
+      }
+  };
+
+  const handleMapIntel = async () => {
+      setStatus(AnalysisStatus.ANALYZING);
+      setError(null);
+      
+      if (!navigator.geolocation) {
+          setError("Geolocation not supported.");
+          setStatus(AnalysisStatus.ERROR);
+          return;
+      }
+      
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+          try {
+              const info = await getTacticalMapInfo(
+                  pos.coords.latitude, 
+                  pos.coords.longitude,
+                  "Identify nearby hospitals and tactical entry points."
+              );
+              setResult("### 🗺️ TACTICAL MAP INTEL\n\n" + info);
+              setStatus(AnalysisStatus.COMPLETED);
+              setMode('upload'); // Show result
+          } catch (e: any) {
+              setError("Map Intel Failed: " + e.message);
+              setStatus(AnalysisStatus.ERROR);
+          }
+      }, (err) => {
+          setError("Location access denied: " + err.message);
+          setStatus(AnalysisStatus.ERROR);
+      });
   };
 
   return (
@@ -58,7 +197,21 @@ const App: React.FC = () => {
             <p className="text-slate-500 text-xs font-mono mt-1">SELECT OPERATION MODE</p>
           </div>
 
-          <div className="flex gap-2 mt-4 md:mt-0 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
+          <div className="flex flex-wrap gap-2 mt-4 md:mt-0 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
+             {/* Audio Toggle */}
+             <button
+              onClick={() => setIsAudioEnabled(!isAudioEnabled)}
+              className={`flex items-center justify-center px-4 py-2 rounded-md transition-all duration-200 border ${
+                isAudioEnabled 
+                  ? 'bg-slate-800 text-cyan-400 border-cyan-500/30' 
+                  : 'bg-slate-900 text-slate-500 border-slate-700 hover:text-slate-300'
+              }`}
+              title="Toggle Tactical Voice Alerts"
+            >
+              {isAudioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <div className="w-px bg-slate-700 mx-1"></div>
+
             <button
               onClick={() => setMode('upload')}
               className={`flex items-center gap-2 px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
@@ -98,7 +251,9 @@ const App: React.FC = () => {
                            <span className="w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
                            Input Stream
                         </h3>
-                        <span className="text-[10px] font-mono text-slate-600">CH_01</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-mono text-slate-600">CH_01</span>
+                        </div>
                     </div>
                     
                     <VideoUpload 
@@ -203,21 +358,32 @@ const App: React.FC = () => {
              </div>
 
              <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Processing Latency</h4>
-                    <p className="text-sm font-mono text-emerald-400">145ms</p>
+                <button 
+                    onClick={handleVoiceReport}
+                    className={`bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center hover:bg-slate-800 transition-colors ${isRecording ? 'border-red-500 bg-red-900/10' : ''}`}
+                >
+                    <Mic className={`w-6 h-6 mb-2 ${isRecording ? 'text-red-500 animate-pulse' : 'text-slate-400'}`} />
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        {isRecording ? 'RECORDING (5s)...' : 'LOG AUDIO REPORT'}
+                    </h4>
+                </button>
+
+                <button 
+                    onClick={handleMapIntel}
+                    className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex flex-col items-center justify-center hover:bg-slate-800 transition-colors"
+                >
+                    <MapPin className="w-6 h-6 mb-2 text-slate-400" />
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">GET MAP INTEL</h4>
+                </button>
+
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg flex flex-col justify-center">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Response Model</h4>
+                    <p className="text-xs font-mono text-orange-400">GEMINI-2.0-FLASH</p>
                 </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Active Model</h4>
-                    <p className="text-sm font-mono text-orange-400">GEMINI-3-PRO</p>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Threat Threshold</h4>
-                    <p className="text-sm font-mono text-white">HIGH (0.8)</p>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Audio Feedback</h4>
-                    <p className="text-sm font-mono text-blue-400">ENABLED</p>
+                
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg flex flex-col justify-center">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Deep Analysis</h4>
+                    <p className="text-xs font-mono text-white">GEMINI-3-PRO (THINKING)</p>
                 </div>
              </div>
           </div>
