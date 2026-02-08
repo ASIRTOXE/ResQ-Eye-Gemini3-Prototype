@@ -16,8 +16,8 @@ Follow this EXACT structure:
 - **CRITICAL ALERT:** [If safe, say NONE. If danger, specify zone]
 
 ## 👥 BIO-SIGNATURES (SURVIVORS)
-- **Visual Confirmation:** [Yes/No]
-- **Estimated Location:** [e.g., Under north rubble, Depth: 2m]
+- **Visual Confirmation:** [YES/NO] (If a human is visible, set to YES)
+- **Estimated Location:** [If human detected, describe exact location. e.g., Under north rubble, Depth: 2m]
 - **Status:** [Mobile / Trapped / Unconscious]
 
 ## 🗺️ TACTICAL RECOMMENDATION
